@@ -545,7 +545,8 @@ class Main:
                 self.ic = icebox.iceconfig()
                 self.ic.setup_empty_384()
             else:
-                raise ParseError
+                raise ParseError("Unknown device {}".format(self.device))
+
         #elif fields[0] == 'coldboot' and fields[1] == '=' \
         #        and self.coldboot is None:
         #    # parsed but ignored (can't be represented in IceStorm .asc format)
@@ -555,39 +556,39 @@ class Main:
             # parsed but ignored (can't be represented in IceStorm .asc format)
             self.warmboot = parse_bool(fields[2])
         else:
-            raise ParseError
+            raise ParseError("Unknown setup directive {}".format(fields[0]))
 
     def new_block(self, fields):
         if len(fields) != 3:
-            raise ParseError
+            raise ParseError("Expect 3 fields for each block. Got: {}".format(fields))
         x = int(fields[1])
         y = int(fields[2])
         if (x, y) in self.tiles:
             return self.tiles[x, y]
         if fields[0] == 'logic_tile':
             if (x, y) not in self.ic.logic_tiles:
-                raise ParseError
+                raise ParseError("{} position({},{}) not in defined list for device".format(fields[0], x, y))
             tile = LogicTile(self.ic, x, y)
         elif fields[0] == 'ramb_tile':
             if (x, y) not in self.ic.ramb_tiles:
-                raise ParseError
+                raise ParseError("{} position({},{}) not in defined list for device".format(fields[0], x, y))
             tile = RAMBTile(self.ic, x, y)
         elif fields[0] == 'ramt_tile':
             if (x, y) not in self.ic.ramt_tiles:
-                raise ParseError
+                raise ParseError("{} position({},{}) not in defined list for device".format(fields[0], x, y))
             tile = RAMTTile(self.ic, x, y)
         elif fields[0] == 'io_tile':
             if (x, y) not in self.ic.io_tiles:
-                raise ParseError
+                raise ParseError("{} position({},{}) not in defined list for device".format(fields[0], x, y))
             tile = IOTile(self.ic, x, y)
         else:
-            raise ParseError
+            raise ParseError("unknown tile type {}".format(fields[0]))
         self.tiles[x, y] = tile
         return tile
 
     def writeout(self):
         if self.ic is None:
-            raise ParseError
+            raise ParseError("IceCube descrition is None")
 
         # fix up IE/REN bits
         unused_ieren = set()
@@ -792,7 +793,7 @@ clearing:{:<30} - current set  :{}""".format(
             self.read(fields[:3])
             self.read(fields[2:])
         else:
-            raise ParseError
+            raise ParseError("Unknown Tile specification format")
 
     def new_block(self, fields):
         raise ParseError
@@ -819,7 +820,7 @@ class LogicTile(Tile):
             if fields == ['lutff_%d' % i] and self.cells[i] is None:
                 self.cells[i] = LogicCell(self, i)
                 return self.cells[i]
-        raise ParseError
+        raise ParseError("Unepxected new block in logic tile")
 
 class LogicCell:
     def __init__(self, tile, index):
@@ -894,7 +895,7 @@ class LogicCell:
             self.tile.data[self.index * 2 + 1][46:]
 
     def new_block(self, fields):
-        raise ParseError
+        raise ParseError("Unepxected new block in logic cell")
 
 class RAMData:
     def __init__(self, data):
@@ -904,10 +905,10 @@ class RAMData:
         if len(fields) == 1:
             self.data.append(fields[0])
         else:
-            raise ParseError
+            raise ParseError("Unepxected format in RAMData")
 
     def new_block(self, fields):
-        raise ParseError
+        raise ParseError("Unepxected new block in RAMData")
 
 class RAMBTile(Tile):
     def __init__(self, ic, x, y):
@@ -924,7 +925,7 @@ class RAMBTile(Tile):
         if fields == ['data'] and (self.x, self.y) not in self.ic.ram_data:
             self.ic.ram_data[self.x, self.y] = data = []
             return RAMData(data)
-        raise ParseError
+        raise ParseError("Unepxected new block in RAMTile")
 
 class RAMTTile(Tile):
     def __init__(self, ic, x, y):
@@ -954,7 +955,7 @@ class IOTile(Tile):
         if fields == ['io_1'] and self.blocks[1] is None:
             self.blocks[1] = IOBlock(self, 1)
             return self.blocks[1]
-        raise ParseError
+        raise ParseError("Unepxected new block in IOTile")
 
 class IOBlock:
     def __init__(self, tile, index):
@@ -1042,7 +1043,7 @@ class IOBlock:
             raise ParseError
 
     def new_block(self, fields):
-        raise ParseError
+        raise ParseError("Unexpected new block in IOBlock")
 
 def main1(path):
     f = open(path, 'r')
