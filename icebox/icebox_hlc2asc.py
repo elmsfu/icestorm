@@ -578,12 +578,18 @@ class Main:
             if self.device.startswith('1k'):
                 self.ic = icebox.iceconfig()
                 self.ic.setup_empty_1k()
+            elif self.device.startswith('5k'):
+                self.ic = icebox.iceconfig()
+                self.ic.setup_empty_5k()
             elif self.device.startswith('8k'):
                 self.ic = icebox.iceconfig()
                 self.ic.setup_empty_8k()
             elif self.device.startswith('384'):
                 self.ic = icebox.iceconfig()
                 self.ic.setup_empty_384()
+            elif self.device.startswith('lm4k'):
+                self.ic = icebox.iceconfig()
+                self.ic.setup_empty_lm4k()
             else:
                 raise ParseError("Unknown device {}".format(self.device))
 
