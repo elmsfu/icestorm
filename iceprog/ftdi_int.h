@@ -1,3 +1,4 @@
+#include <ftdi.h>
 #include "spi_int.h"
 
-extern spi_interface_t ftdi_int;
+extern const spi_interface_t ftdi_int;

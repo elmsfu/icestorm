@@ -34,11 +34,11 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
-#include <ftdi.h>
-
 #include "ftdi_int.h"
 
 static bool verbose = false;
+
+spi_interface_t const* spi_interface = &ftdi_int;
 
 // ---------------------------------------------------------
 // FLASH definitions
@@ -113,20 +113,20 @@ enum flash_cmd {
 // the FPGA reset is released so also FLASH chip select should be deasserted
 static void flash_release_reset()
 {
-	ftdi_int.set_gpio(1, 1);
+	spi_interface->set_gpio(1, 1);
 }
 
 // FLASH chip select assert
 // should only happen while FPGA reset is asserted
 static void flash_chip_select()
 {
-	ftdi_int.set_gpio(0, 0);
+	spi_interface->set_gpio(0, 0);
 }
 
 // FLASH chip select deassert
 static void flash_chip_deselect()
 {
-	ftdi_int.set_gpio(1, 0);
+	spi_interface->set_gpio(1, 0);
 }
 
 // SRAM reset is the same as flash_chip_select()
@@ -134,14 +134,14 @@ static void flash_chip_deselect()
 static void sram_reset()
 {
 	// Asserting chip select and reset lines
-	ftdi_int.set_gpio(0, 0);
+	spi_interface->set_gpio(0, 0);
 }
 
 // SRAM chip select assert
 // When accessing FPGA SRAM the reset should be released
 static void sram_chip_select()
 {
-	ftdi_int.set_gpio(0, 1);
+	spi_interface->set_gpio(0, 1);
 }
 
 static void flash_read_id()
@@ -165,7 +165,7 @@ static void flash_read_id()
 	flash_chip_select();
 
 	// Write command and read first 4 bytes
-	ftdi_int.xfer_spi(data, len);
+	spi_interface->xfer_spi(data, len);
 
 	if (data[4] == 0xFF)
 		fprintf(stderr, "Extended Device String Length is 0xFF, "
@@ -174,7 +174,7 @@ static void flash_read_id()
 		// Read extended JEDEC ID bytes
 		if (data[4] != 0) {
 			len += data[4];
-			ftdi_int.xfer_spi(data + 5, len - 5);
+			spi_interface->xfer_spi(data + 5, len - 5);
 		}
 	}
 
@@ -190,11 +190,11 @@ static void flash_read_id()
 static void flash_reset()
 {
 	flash_chip_select();
-	ftdi_int.xfer_spi_bits(0xFF, 8);
+	spi_interface->xfer_spi_bits(0xFF, 8);
 	flash_chip_deselect();
 
 	flash_chip_select();
-	ftdi_int.xfer_spi_bits(0xFF, 2);
+	spi_interface->xfer_spi_bits(0xFF, 2);
 	flash_chip_deselect();
 }
 
@@ -202,7 +202,7 @@ static void flash_power_up()
 {
 	uint8_t data_rpd[1] = { FC_RPD };
 	flash_chip_select();
-	ftdi_int.xfer_spi(data_rpd, 1);
+	spi_interface->xfer_spi(data_rpd, 1);
 	flash_chip_deselect();
 }
 
@@ -210,7 +210,7 @@ static void flash_power_down()
 {
 	uint8_t data[1] = { FC_PD };
 	flash_chip_select();
-	ftdi_int.xfer_spi(data, 1);
+	spi_interface->xfer_spi(data, 1);
 	flash_chip_deselect();
 }
 
@@ -219,7 +219,7 @@ static uint8_t flash_read_status()
 	uint8_t data[2] = { FC_RSR1 };
 
 	flash_chip_select();
-	ftdi_int.xfer_spi(data, 2);
+	spi_interface->xfer_spi(data, 2);
 	flash_chip_deselect();
 
 	if (verbose) {
@@ -282,7 +282,7 @@ static void flash_write_enable()
 
 	uint8_t data[1] = { FC_WE };
 	flash_chip_select();
-	ftdi_int.xfer_spi(data, 1);
+	spi_interface->xfer_spi(data, 1);
 	flash_chip_deselect();
 
 	if (verbose) {
@@ -297,7 +297,7 @@ static void flash_bulk_erase()
 
 	uint8_t data[1] = { FC_CE };
 	flash_chip_select();
-	ftdi_int.xfer_spi(data, 1);
+	spi_interface->xfer_spi(data, 1);
 	flash_chip_deselect();
 }
 
@@ -308,7 +308,7 @@ static void flash_64kB_sector_erase(int addr)
 	uint8_t command[4] = { FC_BE64, (uint8_t)(addr >> 16), (uint8_t)(addr >> 8), (uint8_t)addr };
 
 	flash_chip_select();
-	ftdi_int.send_spi(command, 4);
+	spi_interface->send_spi(command, 4);
 	flash_chip_deselect();
 }
 
@@ -320,8 +320,8 @@ static void flash_prog(int addr, uint8_t *data, int n)
 	uint8_t command[4] = { FC_PP, (uint8_t)(addr >> 16), (uint8_t)(addr >> 8), (uint8_t)addr };
 
 	flash_chip_select();
-	ftdi_int.send_spi(command, 4);
-	ftdi_int.send_spi(data, n);
+	spi_interface->send_spi(command, 4);
+	spi_interface->send_spi(data, n);
 	flash_chip_deselect();
 
 	if (verbose)
@@ -337,9 +337,9 @@ static void flash_read(int addr, uint8_t *data, int n)
 	uint8_t command[4] = { FC_RD, (uint8_t)(addr >> 16), (uint8_t)(addr >> 8), (uint8_t)addr };
 
 	flash_chip_select();
-	ftdi_int.send_spi(command, 4);
+	spi_interface->send_spi(command, 4);
 	memset(data, 0, n);
-	ftdi_int.xfer_spi(data, n);
+	spi_interface->xfer_spi(data, n);
 	flash_chip_deselect();
 
 	if (verbose)
@@ -358,7 +358,7 @@ static void flash_wait()
 		uint8_t data[2] = { FC_RSR1 };
 
 		flash_chip_select();
-		ftdi_int.xfer_spi(data, 2);
+		spi_interface->xfer_spi(data, 2);
 		flash_chip_deselect();
 
 		if ((data[1] & 0x01) == 0) {
@@ -398,7 +398,7 @@ static void flash_disable_protection()
 	// Write Status Register 1 <- 0x00
 	uint8_t data[2] = { FC_WSR1, 0x00 };
 	flash_chip_select();
-	ftdi_int.xfer_spi(data, 2);
+	spi_interface->xfer_spi(data, 2);
 	flash_chip_deselect();
 
 	flash_wait();
@@ -407,7 +407,7 @@ static void flash_disable_protection()
 	data[0] = FC_RSR1;
 
 	flash_chip_select();
-	ftdi_int.xfer_spi(data, 2);
+	spi_interface->xfer_spi(data, 2);
 	flash_chip_deselect();
 
 	if (data[1] != 0x00)
@@ -761,11 +761,11 @@ int main(int argc, char **argv)
 
 	fprintf(stderr, "init..\n");
 
-	ftdi_int.spi_init(devstr, ifnum);
+	spi_interface->spi_init(devstr, ifnum);
 
-	ftdi_int.set_speed(slow_clock);
+	spi_interface->set_speed(slow_clock);
 
-	fprintf(stderr, "cdone: %s\n", ftdi_int.get_cdone() ? "high" : "low");
+	fprintf(stderr, "cdone: %s\n", spi_interface->get_cdone() ? "high" : "low");
 
 	flash_release_reset();
 	usleep(100000);
@@ -777,7 +777,7 @@ int main(int argc, char **argv)
 		flash_chip_deselect();
 		usleep(250000);
 
-		fprintf(stderr, "cdone: %s\n", ftdi_int.get_cdone() ? "high" : "low");
+		fprintf(stderr, "cdone: %s\n", spi_interface->get_cdone() ? "high" : "low");
 
 		flash_reset();
 		flash_power_up();
@@ -789,7 +789,7 @@ int main(int argc, char **argv)
 		flash_release_reset();
 		usleep(250000);
 
-		fprintf(stderr, "cdone: %s\n", ftdi_int.get_cdone() ? "high" : "low");
+		fprintf(stderr, "cdone: %s\n", spi_interface->get_cdone() ? "high" : "low");
 	}
 	else if (prog_sram)
 	{
@@ -805,7 +805,7 @@ int main(int argc, char **argv)
 		sram_chip_select();
 		usleep(2000);
 
-		fprintf(stderr, "cdone: %s\n", ftdi_int.get_cdone() ? "high" : "low");
+		fprintf(stderr, "cdone: %s\n", spi_interface->get_cdone() ? "high" : "low");
 
 
 		// ---------------------------------------------------------
@@ -820,12 +820,12 @@ int main(int argc, char **argv)
 				break;
 			if (verbose)
 				fprintf(stderr, "sending %d bytes.\n", rc);
-			ftdi_int.send_spi(buffer, rc);
+			spi_interface->send_spi(buffer, rc);
 		}
 
-                ftdi_int.send_49bits();
+                spi_interface->send_49bits();
 
-		fprintf(stderr, "cdone: %s\n", ftdi_int.get_cdone() ? "high" : "low");
+		fprintf(stderr, "cdone: %s\n", spi_interface->get_cdone() ? "high" : "low");
 	}
 	else /* program flash */
 	{
@@ -838,7 +838,7 @@ int main(int argc, char **argv)
 		flash_chip_deselect();
 		usleep(250000);
 
-		fprintf(stderr, "cdone: %s\n", ftdi_int.get_cdone() ? "high" : "low");
+		fprintf(stderr, "cdone: %s\n", spi_interface->get_cdone() ? "high" : "low");
 
 		flash_reset();
 		flash_power_up();
@@ -926,7 +926,7 @@ int main(int argc, char **argv)
 				flash_read(rw_offset + addr, buffer_flash, rc);
 				if (memcmp(buffer_file, buffer_flash, rc)) {
 					fprintf(stderr, "Found difference between flash and file!\n");
-					ftdi_int.error(3);
+					spi_interface->error(3);
 				}
 			}
 
@@ -943,7 +943,7 @@ int main(int argc, char **argv)
 		flash_release_reset();
 		usleep(250000);
 
-		fprintf(stderr, "cdone: %s\n", ftdi_int.get_cdone() ? "high" : "low");
+		fprintf(stderr, "cdone: %s\n", spi_interface->get_cdone() ? "high" : "low");
 	}
 
 	if (f != NULL && f != stdin && f != stdout)
@@ -954,7 +954,7 @@ int main(int argc, char **argv)
 	// ---------------------------------------------------------
 
 	fprintf(stderr, "Bye.\n");
-	ftdi_int.spi_deinit();
+	spi_interface->spi_deinit();
 
 	return 0;
 }

@@ -301,7 +301,7 @@ static void set_speed(bool slow_clock)
         }
 }
 
-spi_interface_t ftdi_int =
+const spi_interface_t ftdi_int =
 {
   .spi_init      = spi_init,
   .spi_deinit    = spi_deinit,
