@@ -207,6 +207,61 @@ static void error(int status)
 	exit(status);
 }
 
+static void spi_init(const char *devstr, enum ftdi_interface ifnum) {
+	ftdi_init(&ftdic);
+	ftdi_set_interface(&ftdic, ifnum);
+
+	if (devstr != NULL) {
+		if (ftdi_usb_open_string(&ftdic, devstr)) {
+			fprintf(stderr, "Can't find iCE FTDI USB device (device string %s).\n", devstr);
+			error(2);
+		}
+	} else {
+		if (ftdi_usb_open(&ftdic, 0x0403, 0x6010) && ftdi_usb_open(&ftdic, 0x0403, 0x6014)) {
+			fprintf(stderr, "Can't find iCE FTDI USB device (vendor_id 0x0403, device_id 0x6010 or 0x6014).\n");
+			error(2);
+		}
+	}
+
+	ftdic_open = true;
+
+	if (ftdi_usb_reset(&ftdic)) {
+		fprintf(stderr, "Failed to reset iCE FTDI USB device.\n");
+		error(2);
+	}
+
+	if (ftdi_usb_purge_buffers(&ftdic)) {
+		fprintf(stderr, "Failed to purge buffers on iCE FTDI USB device.\n");
+		error(2);
+	}
+
+	if (ftdi_get_latency_timer(&ftdic, &ftdi_latency) < 0) {
+		fprintf(stderr, "Failed to get latency timer (%s).\n", ftdi_get_error_string(&ftdic));
+		error(2);
+	}
+
+	/* 1 is the fastest polling, it means 1 kHz polling */
+	if (ftdi_set_latency_timer(&ftdic, 1) < 0) {
+		fprintf(stderr, "Failed to set latency timer (%s).\n", ftdi_get_error_string(&ftdic));
+		error(2);
+	}
+
+	ftdic_latency_set = true;
+
+	/* Enter MPSSE (Multi-Protocol Synchronous Serial Engine) mode. Set all pins to output. */
+	if (ftdi_set_bitmode(&ftdic, 0xff, BITMODE_MPSSE) < 0) {
+		fprintf(stderr, "Failed to set BITMODE_MPSSE on iCE FTDI USB device.\n");
+		error(2);
+	}
+}
+
+static void spi_deinit() {
+	ftdi_set_latency_timer(&ftdic, ftdi_latency);
+	ftdi_disable_bitbang(&ftdic);
+	ftdi_usb_close(&ftdic);
+	ftdi_deinit(&ftdic);
+}
+
 static uint8_t recv_byte()
 {
 	uint8_t data;
@@ -965,51 +1020,7 @@ int main(int argc, char **argv)
 
 	fprintf(stderr, "init..\n");
 
-	ftdi_init(&ftdic);
-	ftdi_set_interface(&ftdic, ifnum);
-
-	if (devstr != NULL) {
-		if (ftdi_usb_open_string(&ftdic, devstr)) {
-			fprintf(stderr, "Can't find iCE FTDI USB device (device string %s).\n", devstr);
-			error(2);
-		}
-	} else {
-		if (ftdi_usb_open(&ftdic, 0x0403, 0x6010) && ftdi_usb_open(&ftdic, 0x0403, 0x6014)) {
-			fprintf(stderr, "Can't find iCE FTDI USB device (vendor_id 0x0403, device_id 0x6010 or 0x6014).\n");
-			error(2);
-		}
-	}
-
-	ftdic_open = true;
-
-	if (ftdi_usb_reset(&ftdic)) {
-		fprintf(stderr, "Failed to reset iCE FTDI USB device.\n");
-		error(2);
-	}
-
-	if (ftdi_usb_purge_buffers(&ftdic)) {
-		fprintf(stderr, "Failed to purge buffers on iCE FTDI USB device.\n");
-		error(2);
-	}
-
-	if (ftdi_get_latency_timer(&ftdic, &ftdi_latency) < 0) {
-		fprintf(stderr, "Failed to get latency timer (%s).\n", ftdi_get_error_string(&ftdic));
-		error(2);
-	}
-
-	/* 1 is the fastest polling, it means 1 kHz polling */
-	if (ftdi_set_latency_timer(&ftdic, 1) < 0) {
-		fprintf(stderr, "Failed to set latency timer (%s).\n", ftdi_get_error_string(&ftdic));
-		error(2);
-	}
-
-	ftdic_latency_set = true;
-
-	/* Enter MPSSE (Multi-Protocol Synchronous Serial Engine) mode. Set all pins to output. */
-	if (ftdi_set_bitmode(&ftdic, 0xff, BITMODE_MPSSE) < 0) {
-		fprintf(stderr, "Failed to set BITMODE_MPSSE on iCE FTDI USB device.\n");
-		error(2);
-	}
+	spi_init(devstr, ifnum);
 
 	// enable clock divide by 5
 	send_byte(MC_TCK_D5);
@@ -1125,7 +1136,7 @@ int main(int argc, char **argv)
 				flash_write_enable();
 				flash_disable_protection();
 			}
-			
+
 			if (!dont_erase)
 			{
 				if (bulk_erase)
@@ -1208,7 +1219,7 @@ int main(int argc, char **argv)
 
 		flash_power_down();
 
-		set_gpio(1, 1);
+		flash_release_reset();
 		usleep(250000);
 
 		fprintf(stderr, "cdone: %s\n", get_cdone() ? "high" : "low");
@@ -1222,9 +1233,7 @@ int main(int argc, char **argv)
 	// ---------------------------------------------------------
 
 	fprintf(stderr, "Bye.\n");
-	ftdi_set_latency_timer(&ftdic, ftdi_latency);
-	ftdi_disable_bitbang(&ftdic);
-	ftdi_usb_close(&ftdic);
-	ftdi_deinit(&ftdic);
+	spi_deinit();
+
 	return 0;
 }
