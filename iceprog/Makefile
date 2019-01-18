@@ -16,9 +16,11 @@ LDLIBS += $(shell for pkg in libftdi1 libftdi; do $(PKG_CONFIG) --silence-errors
 CFLAGS += $(shell for pkg in libftdi1 libftdi; do $(PKG_CONFIG) --silence-errors --cflags $$pkg && exit; done; )
 endif
 
+C_STD = gnu99
+
 all: iceprog$(EXE)
 
-iceprog$(EXE): iceprog.o
+iceprog$(EXE): iceprog.o ftdi_int.o
 	$(CC) -o $@ $(LDFLAGS) $^ $(LDLIBS)
 
 install: all
