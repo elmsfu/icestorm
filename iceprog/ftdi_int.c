@@ -122,7 +122,12 @@ static void send_byte(uint8_t data)
         }
 }
 
-static void spi_init(const char *devstr, enum ftdi_interface ifnum) {
+static void spi_init(const void* params) {
+        const ftdi_params_t* ftdi_params = (const ftdi_params_t*) params;
+
+        char *devstr = ftdi_params->devstr;
+        enum ftdi_interface ifnum = ftdi_params->ifnum;
+
         ftdi_init(&ftdic);
         ftdi_set_interface(&ftdic, ifnum);
 

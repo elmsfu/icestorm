@@ -20,7 +20,7 @@ C_STD = gnu99
 
 all: iceprog$(EXE)
 
-iceprog$(EXE): iceprog.o ftdi_int.o
+iceprog$(EXE): flash.o spidev_int.o iceprog.o ftdi_int.o
 	$(CC) -o $@ $(LDFLAGS) $^ $(LDLIBS)
 
 install: all
