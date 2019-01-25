@@ -397,7 +397,7 @@ int main(int argc, char **argv)
 #if 0
         ftdi_params_t params = {devstr, ifnum};
 #elif 1
-        spidev_params_t params = {"/dev/spi0.0"};
+        spidev_params_t params = {"/dev/spi0.0", 0, 0, 8};
 #endif
 	spi_interface->spi_init(&params);
 
