@@ -16,14 +16,116 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
-static int fd = -1;
+static int spi_fd = -1;
+
+const static char* gpio_export     = "/sys/class/gpio/export";
+const static char* gpio_unexport   = "/sys/class/gpio/unexport";
+const static char* gpio_value      = "/sys/class/gpio%d/value";
+const static char* gpio_dir        = "/sys/class/gpio%d/direction";
+const static char* gpio_active_low = "/sys/class/gpio%d/active_low";
+const static char* gpio_edge       = "/sys/class/gpio%d/edge";
+
+static uint32_t reset = -1;
+static uint32_t done = -1;
+static uint32_t ss = -1;
+
+#define BUF_LEN 256
+
+static int gpio_help_write(const char* file, const char* value) {
+        int fd = open(file, O_WRONLY);
+        write(fd, value, strlen(value));
+        close(fd);
+
+        return 0;
+}
+
+static int gpio_get(uint32_t pin, uint8_t* value) {
+        char buf[BUF_LEN] = "";
+        int retval = -1;
+
+        snprintf(buf, BUF_LEN, gpio_value, pin);
+
+        int fd = open(buf, O_RDONLY);
+        read(fd, buf, BUF_LEN);
+        close(fd);
+
+        switch (buf[0]) {
+        case '0':
+                retval = 0;
+                break;
+        case '1':
+                retval = 1;
+                break;
+        default:
+                retval = -1;
+                break;
+        }
+
+        return retval;
+}
+
+static int gpio_set(uint32_t pin, uint8_t value) {
+        char buf[BUF_LEN] = "";
+
+        snprintf(buf, BUF_LEN, gpio_value, pin);
+        if (value == 0) {
+                gpio_help_write(buf, "0");
+        } else if (value == 1) {
+                gpio_help_write(buf, "1");
+        } else {
+                return -1;
+        }
+
+        return 0;
+}
+
+static int gpio_init(uint32_t pin, bool out) {
+        char buf[BUF_LEN] = "";
+        // if not already exported, then export
+        snprintf(buf, BUF_LEN, gpio_value, pin);
+        if (0 != access(buf, F_OK)) {
+                int fd = open(gpio_export, O_WRONLY);
+                dprintf(fd, "%d\n", pin);
+                close(fd);
+        }
+
+        // set up
+        snprintf(buf, BUF_LEN, gpio_dir, pin);
+        if (out) {
+                gpio_help_write(buf, "out");
+        } else {
+                gpio_help_write(buf, "in");
+        }
+        snprintf(buf, BUF_LEN, gpio_active_low, pin);
+        gpio_help_write(buf, "0");
+        snprintf(buf, BUF_LEN, gpio_edge, pin);
+        gpio_help_write(buf, "none");
+
+        return 0;
+}
+
+static int gpio_deinit(int pin) {
+        // unexport
+        int fd = open(gpio_unexport, O_WRONLY);
+        dprintf(fd, "%d\n", pin);
+        close(fd);
+}
+
 
 static void spi_init(const void* params) {
 
         spidev_params_t* spidev_params = (spidev_params_t*)params;
 
-        fd = open(spidev_params->name, O_RDWR);
-        if (fd < 0) {
+        reset = spidev_params->reset;
+        ss = spidev_params->ss;
+        done = spidev_params->done;
+
+        gpio_init(reset, 1);
+        gpio_init(ss, 1);
+        gpio_init(done, 0);
+
+        spi_fd = open(spidev_params->name, O_RDWR);
+        if (spi_fd < 0) {
                 perror("open");
                 exit(1);
         }
@@ -34,37 +136,37 @@ static void spi_init(const void* params) {
         __u32 mode  = SPI_MODE_3; //
         __u32 speed = 6000000;
 
-        if (ioctl(fd, SPI_IOC_WR_MODE32, &mode) < 0) {
+        if (ioctl(spi_fd, SPI_IOC_WR_MODE32, &mode) < 0) {
                 perror("SPI wr_mode");
                 return;
         }
-        if (ioctl(fd, SPI_IOC_WR_LSB_FIRST, &lsb) < 0) {
+        if (ioctl(spi_fd, SPI_IOC_WR_LSB_FIRST, &lsb) < 0) {
                 perror("SPI wr_lsb_fist");
                 return;
         }
-        if (ioctl(fd, SPI_IOC_WR_BITS_PER_WORD, &bits) < 0) {
+        if (ioctl(spi_fd, SPI_IOC_WR_BITS_PER_WORD, &bits) < 0) {
                 perror("SPI bits_per_word");
                 return;
         }
-        if (ioctl(fd, SPI_IOC_WR_MAX_SPEED_HZ, &speed) < 0) {
+        if (ioctl(spi_fd, SPI_IOC_WR_MAX_SPEED_HZ, &speed) < 0) {
                 perror("SPI max_speed_hz");
                 return;
         }
 
         // read back
-        if (ioctl(fd, SPI_IOC_RD_MODE32, &mode) < 0) {
+        if (ioctl(spi_fd, SPI_IOC_RD_MODE32, &mode) < 0) {
                 perror("SPI rd_mode");
                 return;
         }
-        if (ioctl(fd, SPI_IOC_RD_LSB_FIRST, &lsb) < 0) {
+        if (ioctl(spi_fd, SPI_IOC_RD_LSB_FIRST, &lsb) < 0) {
                 perror("SPI rd_lsb_fist");
                 return;
         }
-        if (ioctl(fd, SPI_IOC_RD_BITS_PER_WORD, &bits) < 0) {
+        if (ioctl(spi_fd, SPI_IOC_RD_BITS_PER_WORD, &bits) < 0) {
                 perror("SPI bits_per_word");
                 return;
         }
-        if (ioctl(fd, SPI_IOC_RD_MAX_SPEED_HZ, &speed) < 0) {
+        if (ioctl(spi_fd, SPI_IOC_RD_MAX_SPEED_HZ, &speed) < 0) {
                 perror("SPI max_speed_hz");
                 return;
         }
@@ -74,7 +176,7 @@ static void spi_init(const void* params) {
 }
 
 static void spi_deinit() {
-  close(fd);
+  close(spi_fd);
 }
 
 
@@ -97,7 +199,7 @@ static void send_spi(uint8_t *data, int n)
         xfer[0].tx_buf = data;
         xfer[0].len = n;
 
-        int status = ioctl(fd, SPI_IOC_MESSAGE(2), xfer);
+        int status = ioctl(spi_fd, SPI_IOC_MESSAGE(2), xfer);
         if (status < 0) {
                 perror("SPI_IOC_MESSAGE");
                 return;
@@ -118,7 +220,7 @@ static void xfer_spi(uint8_t *data, int n)
         xfer[1].rx_buf = data;
         xfer[1].len = n;
 
-        int status = ioctl(fd, SPI_IOC_MESSAGE(2), xfer);
+        int status = ioctl(spi_fd, SPI_IOC_MESSAGE(2), xfer);
         if (status < 0) {
                 perror("SPI_IOC_MESSAGE");
                 return;
@@ -138,16 +240,18 @@ static uint8_t xfer_spi_bits(uint8_t data, int n)
 
 static void set_gpio(int slavesel_b, int creset_b)
 {
-        uint8_t gpio = 0;
         // set select and reset
+        gpio_set(ss, slavesel_b);
+        gpio_set(reset, creset_b);
 }
 
 static int get_cdone()
 {
-        uint8_t data;
+        uint8_t data = 0;
         //read cdone gpio
+        gpio_get(done, &data);
 
-        return 1;
+        return data;
 }
 
 static void send_49bits()
@@ -168,7 +272,7 @@ static void set_speed(bool slow_clock)
                 speed = 50000;
         }
 
-        if (ioctl(fd, SPI_IOC_WR_MAX_SPEED_HZ, &speed) < 0) {
+        if (ioctl(spi_fd, SPI_IOC_WR_MAX_SPEED_HZ, &speed) < 0) {
                 perror("SPI max_speed_hz");
                 return;
         }

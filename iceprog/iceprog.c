@@ -389,7 +389,7 @@ int main(int argc, char **argv)
 	}
 
 	// ---------------------------------------------------------
-	// Initialize USB connection to FT2232H
+	// Initialize SPI driver
 	// ---------------------------------------------------------
 
 	fprintf(stderr, "init..\n");
