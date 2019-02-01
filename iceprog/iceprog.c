@@ -397,7 +397,12 @@ int main(int argc, char **argv)
 #if 0
         ftdi_params_t params = {devstr, ifnum};
 #elif 1
-        spidev_params_t params = {"/dev/spi0.0", 0, 0, 8};
+        spidev_params_t params = {
+	  .name = "/dev/spidev0.0",
+	  .reset = 17,
+	  .ss = 8,
+	  .done = .22};
+	 //spidev_params_t params = {"/dev/spidev0.1", 27, 22, 7};
 #endif
 	spi_interface->spi_init(&params);
 
@@ -419,8 +424,10 @@ int main(int argc, char **argv)
 
 		flash_reset();
 		flash_power_up();
+		sleep(5);
 
 		flash_read_id();
+		sleep(5);
 
 		flash_power_down();
 
@@ -458,7 +465,7 @@ int main(int argc, char **argv)
 				break;
 			if (verbose)
 				fprintf(stderr, "sending %d bytes.\n", rc);
-			spi_interface->send_spi(buffer, rc);
+			spi_interface->xfer_spi(buffer, rc, NULL, 0);
 		}
 
                 spi_interface->send_49bits();

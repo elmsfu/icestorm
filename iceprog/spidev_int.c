@@ -20,21 +20,37 @@ static int spi_fd = -1;
 
 const static char* gpio_export     = "/sys/class/gpio/export";
 const static char* gpio_unexport   = "/sys/class/gpio/unexport";
-const static char* gpio_value      = "/sys/class/gpio%d/value";
-const static char* gpio_dir        = "/sys/class/gpio%d/direction";
-const static char* gpio_active_low = "/sys/class/gpio%d/active_low";
-const static char* gpio_edge       = "/sys/class/gpio%d/edge";
+const static char* gpio_value      = "/sys/class/gpio/gpio%d/value";
+const static char* gpio_dir        = "/sys/class/gpio/gpio%d/direction";
+const static char* gpio_active_low = "/sys/class/gpio/gpio%d/active_low";
+const static char* gpio_edge       = "/sys/class/gpio/gpio%d/edge";
 
 static uint32_t reset = -1;
 static uint32_t done = -1;
 static uint32_t ss = -1;
 
+#define SLOW_SPEED 600000
 #define BUF_LEN 256
 
 static int gpio_help_write(const char* file, const char* value) {
         int fd = open(file, O_WRONLY);
-        write(fd, value, strlen(value));
-        close(fd);
+        if (fd < 0) {
+	  fprintf(stderr, "%s(%s, %s): ", __PRETTY_FUNCTION__, file, value);
+	  perror("open");
+                exit(1);
+        }
+	
+        int ret = write(fd, value, strlen(value));
+        if (ret < 0) {
+                perror("write");
+                exit(1);
+        }
+	
+        ret = close(fd);
+        if (ret < 0) {
+                perror("close");
+                exit(1);
+        }
 
         return 0;
 }
@@ -85,7 +101,10 @@ static int gpio_init(uint32_t pin, bool out) {
         snprintf(buf, BUF_LEN, gpio_value, pin);
         if (0 != access(buf, F_OK)) {
                 int fd = open(gpio_export, O_WRONLY);
-                dprintf(fd, "%d\n", pin);
+		int ret = dprintf(fd, "%d\n", pin);
+                if (ret < 0) {
+		  perror("dprintf export");
+		}
                 close(fd);
         }
 
@@ -133,8 +152,8 @@ static void spi_init(const void* params) {
         /* Output only, update data on negative clock edge. */
         __u8  lsb   = 0; // MSB first
         __u8  bits  = 8;
-        __u32 mode  = SPI_MODE_3; //
-        __u32 speed = 6000000;
+        __u32 mode  = SPI_MODE_3 | SPI_NO_CS;
+        __u32 speed = SLOW_SPEED;
 
         if (ioctl(spi_fd, SPI_IOC_WR_MODE32, &mode) < 0) {
                 perror("SPI wr_mode");
@@ -153,6 +172,10 @@ static void spi_init(const void* params) {
                 return;
         }
 
+	speed = -1;
+	mode = -1;
+	bits = -1;
+	lsb = -1;
         // read back
         if (ioctl(spi_fd, SPI_IOC_RD_MODE32, &mode) < 0) {
                 perror("SPI rd_mode");
@@ -188,53 +211,37 @@ static void error(int status)
 }
 
 
-static void send_spi(uint8_t *data, int n)
+static void xfer_spi(uint8_t *txdata, uint32_t ntx, uint8_t* rxdata, uint32_t nrx)
 {
-        if (n < 1)
+        if (ntx + nrx < 1)
                 return;
 
         struct spi_ioc_transfer xfer[2];
-        memset(xfer, 0, sizeof xfer);
+        memset(xfer, 0, sizeof(xfer));
 
-        xfer[0].tx_buf = data;
-        xfer[0].len = n;
+	xfer[0].speed_hz = SLOW_SPEED;
+        xfer[0].tx_buf = txdata;
+        xfer[0].len = ntx;
+	//xfer[0].cs_change = 1;
+
+	xfer[1].speed_hz = SLOW_SPEED;
+        xfer[1].rx_buf = rxdata;
+	xfer[1].len = nrx;
 
         int status = ioctl(spi_fd, SPI_IOC_MESSAGE(2), xfer);
         if (status < 0) {
                 perror("SPI_IOC_MESSAGE");
                 return;
         }
-
-}
-
-static void xfer_spi(uint8_t *data, int n)
-{
-        if (n < 1)
-                return;
-
-        struct spi_ioc_transfer xfer[2];
-        memset(xfer, 0, sizeof xfer);
-
-        xfer[0].tx_buf = data;
-        xfer[0].len = n;
-        xfer[1].rx_buf = data;
-        xfer[1].len = n;
-
-        int status = ioctl(spi_fd, SPI_IOC_MESSAGE(2), xfer);
-        if (status < 0) {
-                perror("SPI_IOC_MESSAGE");
-                return;
-        }
-
-        /* Input and output, update data on negative edge read on positive. */
 }
 
 static uint8_t xfer_spi_bits(uint8_t data, int n)
 {
-        if (n < 1)
+        if (n < 1 || n >8)
                 return 0;
 
-        xfer_spi(&data, (n+7)/8);
+	//TODO: use bits_per_word
+        xfer_spi(&data, 1, &data, 1);
         return data;
 }
 
@@ -258,7 +265,7 @@ static void send_49bits()
 {
         size_t nb = 49;
         uint8_t dummy[(49+7)/8];
-        xfer_spi(dummy, nb/8);
+        xfer_spi(dummy, nb/8, NULL, 0);
         xfer_spi_bits(0, nb - (nb/8)*8);
 
 }
@@ -284,7 +291,6 @@ const spi_interface_t spidev_int =
   .spi_deinit    = spi_deinit,
   .set_gpio      = set_gpio,
   .get_cdone     = get_cdone,
-  .send_spi      = send_spi,
   .xfer_spi      = xfer_spi,
   .xfer_spi_bits = xfer_spi_bits,
   .set_speed     = set_speed,

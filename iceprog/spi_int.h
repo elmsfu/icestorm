@@ -9,8 +9,7 @@ typedef struct {
   void    (*spi_deinit)();
   void    (*set_gpio)(int slavesel_b, int creset_b);
   int     (*get_cdone)();
-  void    (*send_spi)(uint8_t *data, int n);
-  void    (*xfer_spi)(uint8_t *data, int n);
+  void    (*xfer_spi)(uint8_t *txdata, uint32_t ntx, uint8_t *rxdata, uint32_t nrx);
   uint8_t (*xfer_spi_bits)(uint8_t data, int n);
   void    (*send_49bits)();
   void    (*set_speed)(bool slow_clock);

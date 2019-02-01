@@ -201,41 +201,39 @@ static uint8_t recv_byte()
         return data;
 }
 
-static void send_spi(uint8_t *data, int n)
+static void xfer_spi(uint8_t *txdata, uint32_t ntx, uint8_t* rxdata, uint32_t nrx)
 {
-        if (n < 1)
+        if (ntx + nrx == 0)
                 return;
 
-        /* Output only, update data on negative clock edge. */
-        send_byte(MC_DATA_OUT | MC_DATA_OCN);
-        send_byte(n - 1);
-        send_byte((n - 1) >> 8);
+	if (txdata != NULL && ntx > 0) {
+		/* Output only, update data on negative clock edge. */
+		send_byte(MC_DATA_OUT | MC_DATA_OCN);
+		send_byte(ntx - 1);
+		send_byte((ntx - 1) >> 8);
+		
+		int rc = ftdi_write_data(&ftdic, txdata, ntx);
+		if (rc != ntx) {
+			fprintf(stderr, "Write error (chunk, rc=%d, expected %d).\n", rc, ntx);
+			error(2);
+		}
+	}
 
-        int rc = ftdi_write_data(&ftdic, data, n);
-        if (rc != n) {
-                fprintf(stderr, "Write error (chunk, rc=%d, expected %d).\n", rc, n);
-                error(2);
-        }
-}
+	if (rxdata != NULL && nrx > 0){
+		/* Input and output, update data on negative edge read on positive. */
+		send_byte(MC_DATA_IN | MC_DATA_OUT | MC_DATA_OCN);
+		send_byte(nrx - 1);
+		send_byte((nrx - 1) >> 8);
 
-static void xfer_spi(uint8_t *data, int n)
-{
-        if (n < 1)
-                return;
-
-        /* Input and output, update data on negative edge read on positive. */
-        send_byte(MC_DATA_IN | MC_DATA_OUT | MC_DATA_OCN);
-        send_byte(n - 1);
-        send_byte((n - 1) >> 8);
-
-        int rc = ftdi_write_data(&ftdic, data, n);
-        if (rc != n) {
-                fprintf(stderr, "Write error (chunk, rc=%d, expected %d).\n", rc, n);
-                error(2);
-        }
-
-        for (int i = 0; i < n; i++)
-                data[i] = recv_byte();
+		int rc = ftdi_write_data(&ftdic, rxdata, nrx);
+		if (rc != ntx) {
+			fprintf(stderr, "Write error (chunk, rc=%d, expected %d).\n", rc, nrx);
+			error(2);
+		}
+		
+		for (int i = 0; i < nrx; i++)
+			rxdata[i] = recv_byte();
+	}
 }
 
 static uint8_t xfer_spi_bits(uint8_t data, int n)
@@ -312,7 +310,6 @@ const spi_interface_t ftdi_int =
   .spi_deinit    = spi_deinit,
   .set_gpio      = set_gpio,
   .get_cdone     = get_cdone,
-  .send_spi      = send_spi,
   .xfer_spi      = xfer_spi,
   .xfer_spi_bits = xfer_spi_bits,
   .set_speed     = set_speed,

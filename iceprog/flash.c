@@ -132,8 +132,8 @@ void flash_read_id()
         flash_chip_select();
 
         // Write command and read first 4 bytes
-        spi_interface->xfer_spi(data, len);
-
+        spi_interface->xfer_spi(data, 1, data+1, 4);
+	
         if (data[4] == 0xFF)
                 fprintf(stderr, "Extended Device String Length is 0xFF, "
                                 "this is likely a read error. Ignorig...\n");
@@ -141,7 +141,7 @@ void flash_read_id()
                 // Read extended JEDEC ID bytes
                 if (data[4] != 0) {
                         len += data[4];
-                        spi_interface->xfer_spi(data + 5, len - 5);
+                        spi_interface->xfer_spi(NULL, 0, data + 5, len - 5);
                 }
         }
 
@@ -169,7 +169,7 @@ void flash_power_up()
 {
         uint8_t data_rpd[1] = { FC_RPD };
         flash_chip_select();
-        spi_interface->xfer_spi(data_rpd, 1);
+        spi_interface->xfer_spi(data_rpd, 1, NULL, 0);
         flash_chip_deselect();
 }
 
@@ -177,7 +177,7 @@ void flash_power_down()
 {
         uint8_t data[1] = { FC_PD };
         flash_chip_select();
-        spi_interface->xfer_spi(data, 1);
+        spi_interface->xfer_spi(data, 1, NULL, 0);
         flash_chip_deselect();
 }
 
@@ -186,7 +186,7 @@ uint8_t flash_read_status()
         uint8_t data[2] = { FC_RSR1 };
 
         flash_chip_select();
-        spi_interface->xfer_spi(data, 2);
+        spi_interface->xfer_spi(data, 1, data+1, 1);
         flash_chip_deselect();
 
         if (verbose) {
@@ -249,7 +249,7 @@ void flash_write_enable()
 
         uint8_t data[1] = { FC_WE };
         flash_chip_select();
-        spi_interface->xfer_spi(data, 1);
+        spi_interface->xfer_spi(data, 1, NULL, 0);
         flash_chip_deselect();
 
         if (verbose) {
@@ -264,7 +264,7 @@ void flash_bulk_erase()
 
         uint8_t data[1] = { FC_CE };
         flash_chip_select();
-        spi_interface->xfer_spi(data, 1);
+        spi_interface->xfer_spi(data, 1, NULL, 0);
         flash_chip_deselect();
 }
 
@@ -275,20 +275,26 @@ void flash_64kB_sector_erase(int addr)
         uint8_t command[4] = { FC_BE64, (uint8_t)(addr >> 16), (uint8_t)(addr >> 8), (uint8_t)addr };
 
         flash_chip_select();
-        spi_interface->send_spi(command, 4);
+        spi_interface->xfer_spi(command, 4, NULL, 0);
         flash_chip_deselect();
 }
 
-void flash_prog(int addr, uint8_t *data, int n)
+void flash_prog(int addr, uint8_t *data, uint32_t n)
 {
         if (verbose)
                 fprintf(stderr, "prog 0x%06X +0x%03X..\n", addr, n);
 
         uint8_t command[4] = { FC_PP, (uint8_t)(addr >> 16), (uint8_t)(addr >> 8), (uint8_t)addr };
 
+	uint8_t* tx_data = malloc(n + 4);
+	if (NULL == tx_data) {
+		return;
+	}
+	memcpy(tx_data, command, 4);
+	memcpy(tx_data+4, data, n);
+	
         flash_chip_select();
-        spi_interface->send_spi(command, 4);
-        spi_interface->send_spi(data, n);
+        spi_interface->xfer_spi(tx_data, n+4, NULL, 0);
         flash_chip_deselect();
 
         if (verbose)
@@ -296,17 +302,17 @@ void flash_prog(int addr, uint8_t *data, int n)
                         fprintf(stderr, "%02x%c", data[i], i == n - 1 || i % 32 == 31 ? '\n' : ' ');
 }
 
-void flash_read(int addr, uint8_t *data, int n)
+void flash_read(int addr, uint8_t *data, uint32_t n)
 {
-        if (verbose)
+	if (verbose) {
                 fprintf(stderr, "read 0x%06X +0x%03X..\n", addr, n);
+	}
 
         uint8_t command[4] = { FC_RD, (uint8_t)(addr >> 16), (uint8_t)(addr >> 8), (uint8_t)addr };
 
         flash_chip_select();
-        spi_interface->send_spi(command, 4);
         memset(data, 0, n);
-        spi_interface->xfer_spi(data, n);
+        spi_interface->xfer_spi(command, 4, data, n);
         flash_chip_deselect();
 
         if (verbose)
@@ -325,9 +331,9 @@ void flash_wait()
                 uint8_t data[2] = { FC_RSR1 };
 
                 flash_chip_select();
-                spi_interface->xfer_spi(data, 2);
+                spi_interface->xfer_spi(data, 1, data+1, 1);
                 flash_chip_deselect();
-
+		
                 if ((data[1] & 0x01) == 0) {
                         if (count < 2) {
                                 count++;
@@ -365,7 +371,7 @@ void flash_disable_protection()
         // Write Status Register 1 <- 0x00
         uint8_t data[2] = { FC_WSR1, 0x00 };
         flash_chip_select();
-        spi_interface->xfer_spi(data, 2);
+        spi_interface->xfer_spi(data, 2, NULL, 0);
         flash_chip_deselect();
 
         flash_wait();
@@ -374,7 +380,7 @@ void flash_disable_protection()
         data[0] = FC_RSR1;
 
         flash_chip_select();
-        spi_interface->xfer_spi(data, 2);
+        spi_interface->xfer_spi(data, 1, data, 1);
         flash_chip_deselect();
 
         if (data[1] != 0x00)
