@@ -1,6 +1,6 @@
 /*
  *  iceprog -- simple programming tool for FTDI-based Lattice iCE programmers
- *
+spidev *
  *  Copyright (C) 2015  Clifford Wolf <clifford@clifford.at>
  *  Copyright (C) 2018  Piotr Esden-Tempski <piotr@esden.net>
  *
@@ -397,12 +397,19 @@ int main(int argc, char **argv)
 #if 0
         ftdi_params_t params = {devstr, ifnum};
 #elif 1
+	#if 1
         spidev_params_t params = {
 	  .name = "/dev/spidev0.0",
 	  .reset = 17,
 	  .ss = 8,
-	  .done = .22};
-	 //spidev_params_t params = {"/dev/spidev0.1", 27, 22, 7};
+	  .done = 4};
+	#else
+	spidev_params_t params = {
+	  .name = "/dev/spidev0.1",
+	  .reset = 27,
+	  .ss = 1,
+	  .done = 22};
+	#endif
 #endif
 	spi_interface->spi_init(&params);
 

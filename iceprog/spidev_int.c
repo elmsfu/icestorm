@@ -62,20 +62,39 @@ static int gpio_get(uint32_t pin, uint8_t* value) {
         snprintf(buf, BUF_LEN, gpio_value, pin);
 
         int fd = open(buf, O_RDONLY);
-        read(fd, buf, BUF_LEN);
-        close(fd);
+        if (fd < 0) {
+                perror("open get_gpio");
+                exit(1);
+        }
+	
+        int ret = read(fd, buf, BUF_LEN);
+	if (ret < 0) {
+                perror("write");
+                exit(1);
+        }
+
+        ret = close(fd);
+        if (ret < 0) {
+                perror("write");
+                exit(1);
+        }
 
         switch (buf[0]) {
         case '0':
                 retval = 0;
+		*value = 0;
                 break;
         case '1':
                 retval = 1;
+		*value = 1;
                 break;
         default:
                 retval = -1;
+		fprintf(stderr, "failed to read gpio pin(%d): %s\n", pin, buf);
                 break;
         }
+
+	fprintf(stderr, "read gpio pin(%d): %d %c\n", pin, *value, buf[0]);
 
         return retval;
 }
@@ -139,6 +158,8 @@ static void spi_init(const void* params) {
         ss = spidev_params->ss;
         done = spidev_params->done;
 
+	fprintf(stderr, "r,s,d: %d, %d %d\n", reset, ss, done);
+	
         gpio_init(reset, 1);
         gpio_init(ss, 1);
         gpio_init(done, 0);
@@ -256,7 +277,7 @@ static int get_cdone()
 {
         uint8_t data = 0;
         //read cdone gpio
-        gpio_get(done, &data);
+        int ret = gpio_get(done, &data);
 
         return data;
 }
